@@ -1,0 +1,56 @@
+list of all things that need to be labeled:
+doors - various numbers and colors of keys
+thief
+totem - with gems in it and without
+
+traps - need to consider all levels of traps
+saw
+red guard
+cannon
+seeker bird
+homing cannon
+spinner
+ricochet
+dragon
+roaster
+warder
+bloodhound
+electro cannon
+spider
+funny jumping green dude
+
+anti grav - activated and deactivated
+board
+trampoline
+
+
+guidelines for simple vision:
+for the first instance of the bot, let's keep it simple.
+
+must haves:
+door
+totem - with varying rituals going
+thief
+
+let's go with these traps:
+saw
+red guard
+cannon
+seeker bird
+100 - homing cannon
+100 - spinner
+ricochet
+dragon
+warder
+100 - bloodhound
+electro cannon
+
+these i really want to avoid for the simpler version:
+roaster - not really sure how i'd categorize the value of the roaster circle filling
+spider - alters the game state too much
+anti grav, board, trampoline - too much headache, especially with board and trampoline tech
+
+for each group of 3 traps i'll get 100 screenshots in 30-30-40 increments (or 30-30-20)
+door and totem in different places
+1 with totem no gems, 2 with gems but different rituals running
+traps in different places too
