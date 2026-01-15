@@ -3,9 +3,12 @@ import pyautogui as pag
 from PIL import ImageGrab
 import time
 
-print(gw.getAllTitles())
+all_windows = gw.getAllTitles()
+print(all_windows)
 
-target_window = gw.getWindowsWithTitle("BlueStacks App Player")[0]
+target_window = gw.getWindowsWithTitle(all_windows[0])[0]
+print(target_window)
+
 bbox = (target_window.left, target_window.top, target_window.right, target_window.bottom)
 pag.click(target_window.left + 10, target_window.top + 10)
 # screenshot = ImageGrab.grab(bbox)

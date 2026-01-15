@@ -54,3 +54,10 @@ for each group of 3 traps i'll get 100 screenshots in 30-30-40 increments (or 30
 door and totem in different places
 1 with totem no gems, 2 with gems but different rituals running
 traps in different places too
+
+
+
+
+1/12/26: simpler version
+new account, only player, saw, rg, cannon, bullet, chest
+start with 100 ish images only
