@@ -61,3 +61,10 @@ traps in different places too
 1/12/26: simpler version
 new account, only player, saw, rg, cannon, bullet, chest
 start with 100 ish images only
+
+1/15/26:
+okay so now that we have the cv model that runs on videos and photos, we can start computing values
+i'd say we can assume the object is the same one as the previous frame if it's position is roughly equivalent + smoothing
+calculate movement of objects - we know saws are constant, rgs move on a line, bullets as well
+player is more complicated - will need to computer velocity from change in position and accel from change in avg velocity
+    use these to assume if player is walking, jumping, sliding, falling

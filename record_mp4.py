@@ -1,9 +1,14 @@
 from mss import mss
-from PIL import Image
 import Quartz
 import time
 import cv2
 import numpy as np
+
+# config
+FPS = 30
+SECONDS = 10
+OUT_PATH = "capture2.mp4"
+WINDOW = "King of Thieves"
 
 def find_window_region(owner_target: str):
     options = Quartz.kCGWindowListExcludeDesktopElements | Quartz.kCGWindowListOptionOnScreenOnly
@@ -31,18 +36,15 @@ def find_window_region(owner_target: str):
     raise RuntimeError(f"window not found for owner='{owner_target}'")
 
 def record_region(region, out_path: str):
-    fps = 30
-    seconds = 5
-
     width, height = region["width"], region["height"]
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-    writer = cv2.VideoWriter(out_path, fourcc, fps, (width, height))
+    writer = cv2.VideoWriter(out_path, fourcc, FPS, (width, height))
 
     if not writer.isOpened():
         raise RuntimeError("failed to open videowriter")
     
-    frame_count = int(fps * seconds)
-    frame_time = 1.0 / fps
+    frame_count = int(FPS * SECONDS)
+    frame_time = 1.0 / FPS
 
     print("recording started")
     with mss() as sct:
@@ -66,5 +68,5 @@ if __name__ == "__main__":
     print("starting recording in 3 seconds")
     time.sleep(3)
     
-    region = find_window_region(owner_target="King of Thieves")
-    record_region(region, out_path="game_capture.mp4")
+    region = find_window_region(owner_target=WINDOW)
+    record_region(region, out_path=OUT_PATH)

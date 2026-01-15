@@ -35,10 +35,10 @@ print(region)
 with mss() as sct:
     print("taking screenshots in 5 seconds")
     time.sleep(5)
-    for i in range(90,92):
+    for i in range(151, 201):
         screenshot = sct.grab(region)
 
         img = Image.frombytes("RGB", screenshot.size, screenshot.rgb)
         img.save(f"imgs/test - {i}.png")
         print(f"image test - {i}.png saved successfully")
-        time.sleep(1)
+        time.sleep(.1)

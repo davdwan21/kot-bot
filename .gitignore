@@ -1,3 +1,5 @@
 .venv
 /imgs
 .env
+/vids
+temp_frame.png
