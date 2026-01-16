@@ -5,7 +5,7 @@ import os
 import cv2
 import numpy as np
 
-# model config
+# Model config
 load_dotenv()
 MODEL_ID = "simple-kot/5"
 CONF_THRES = 0.5
@@ -17,7 +17,7 @@ OUT_VID = "vids/annotated2.mp4"
 API_URL = "http://localhost:9001" # Docker required for local host
 API_KEY = os.getenv("ROBOFLOW_KEY")
 
-# font config
+# Font config
 font_path = "Helvetica.ttc"
 font_size = 14
 try:
@@ -26,13 +26,13 @@ except IOError:
     print(f"could not load font: {font_path}. Using default font.")
     font = ImageFont.load_default() 
 
-# load client
+# Load client
 CLIENT = InferenceHTTPClient(
     api_url=API_URL,
     api_key=API_KEY
 )
 
-""" draw roboflow predictions on image and return it """
+""" Draw Roboflow predictions on image and return it """
 def draw_boxes(img: Image.Image, result: dict | list[dict]) -> Image.Image:
     # img = Image.open(image_path).convert("RGB")
     draw = ImageDraw.Draw(img)
@@ -58,14 +58,14 @@ def draw_boxes(img: Image.Image, result: dict | list[dict]) -> Image.Image:
 
     return img
 
-""" make inference on single frame (image) """
+""" Make inference on single frame (image) """
 def infer_frame(frame_path: str) -> dict | list[dict]:
     return CLIENT.infer(frame_path, model_id=MODEL_ID)
 
 def calculate_motion(result: dict | list[dict]):
     pass
 
-""" run predictions on the video and save an annotated copy """
+""" Run predictions on the video and save an annotated copy """
 def process_video(in_path: str, out_path: str):
     cap = cv2.VideoCapture(in_path)
     if not cap.isOpened():
@@ -81,9 +81,9 @@ def process_video(in_path: str, out_path: str):
     frame_idx = 0
     last_result = None
     
-    print("beginning inference")
+    print("Beginning inference")
     while True:
-        print(f"reading frame {frame_idx}")
+        print(f"Reading frame {frame_idx}")
         ok, frame_bgr = cap.read()
         if not ok:
             break

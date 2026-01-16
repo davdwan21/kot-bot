@@ -2,8 +2,14 @@ from inference_sdk import InferenceHTTPClient
 from PIL import Image, ImageDraw, ImageFont
 from dotenv import load_dotenv
 import os
+import pprint
 
+# Config
 load_dotenv()
+CONF_THRES = 0.5
+IN_PATH = "imgs/test - 58.png"
+OUT_PATH = "out2.png"
+MODEL_ID = "simple-kot/5"
 
 def draw_boxes(image_path, result, out_path):
     img = Image.open(image_path).convert("RGB")
@@ -11,8 +17,10 @@ def draw_boxes(image_path, result, out_path):
 
     preds = result.get("predictions", [])
     for p in preds:
-        if p["confidence"] < 0.8:
+        if p["confidence"] < CONF_THRES:
             continue
+
+        pprint.pprint(p, indent=4)
 
         x = p["x"]
         y = p["y"]
@@ -40,15 +48,13 @@ except IOError:
     print(f"could not load font: {font_path}. Using default font.")
     font = ImageFont.load_default() 
 
-
 CLIENT = InferenceHTTPClient(
-    # api_url="https://serverless.roboflow.com",
     api_url="http://localhost:9001",
     api_key=os.getenv("ROBOFLOW_KEY")
 )
 
-result = CLIENT.infer(img_path, model_id="simple-kot/2")
+result = CLIENT.infer(img_path, model_id=MODEL_ID)
 
-print(result)
+pprint.pprint(result, indent=4)
 
-annotated_path = draw_boxes(img_path, result, "out2.png")
+annotated_path = draw_boxes(img_path, result, OUT_PATH)

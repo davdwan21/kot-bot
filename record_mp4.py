@@ -4,7 +4,7 @@ import time
 import cv2
 import numpy as np
 
-# config
+# Config
 FPS = 30
 SECONDS = 10
 OUT_PATH = "capture2.mp4"
