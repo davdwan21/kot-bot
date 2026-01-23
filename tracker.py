@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from typing import Optional
+import math
 
 """ Return bbox corners for IoU calculations"""
 def xywh_to_xyxy(x, y, w, h):
@@ -12,13 +13,16 @@ def iou_xyxy(a, b) -> float:
     inter_y1 = max(ay1, by1)
     inter_x2 = min(ax2, bx2)
     inter_y2 = min(ay2, by2)
-    iw = max(0.0, inter_x1, inter_x2)
-    ih = max(0.0, inter_y1, inter_y2)
+    iw = max(0.0, inter_x2 - inter_x1)
+    ih = max(0.0, inter_y2 - inter_y1)
     inter = iw * ih
     area_a = max(0.0, ax2 - ax1) * max(0.0, ay2 - ay1)
     area_b = max(0.0, bx2 - bx1) * max(0.0, by2 - by1)
     union = area_a + area_b - inter
     return inter / union if union > 0 else 0.0
+
+def dist(a: tuple[float,float], b: tuple[float,float]) -> float:
+    return math.hypot(a[0] - b[0], a[1] - b[1])
 
 @dataclass
 class Track:
@@ -63,7 +67,7 @@ class SimpleTracker:
     def _max_dist(self, cls: str) -> float:
         return self.max_dist_by_class.get(cls, 80.0)
     
-    def _new_entity(self, det: dict, t: float) -> Track:
+    def _new_track(self, det: dict, t: float) -> Track:
         tid = self.next_id
         self.next_id += 1
         x, y = float(det["x"]), float(det["y"])
@@ -82,6 +86,7 @@ class SimpleTracker:
     def _update_track(self, tr: Track, det: dict, t: float):
         x, y = float(det["x"]), float(det["y"])
         dt = t - tr.last_t
+        print("DEBUG", tr.track_id, "dt=", dt, "last_t=", tr.last_t, "t=", t)
         
         if dt > 1e-6:
             vx = (x - tr.last_xy[0]) / dt
@@ -108,8 +113,8 @@ class SimpleTracker:
         tr.last_box_xyxy = xywh_to_xyxy(x, y, w, h)
         
     """ Call once per day """
-    def update(self, result: dict) -> list[Track]:
-        t = float(result.get("time", 0.0))
+    def update(self, result: dict, t: float) -> list[Track]:
+        t = float(t)
         
         detections = [
             d for d in result.get("predictions", ())
@@ -127,3 +132,43 @@ class SimpleTracker:
         
         for cls, dets in dets_by_class.items():
             cand_tracks = [tr for tr in self.tracks.values() if tr.cls == cls and tr.track_id not in used_track_ids]
+            
+            dets = sorted(dets, key=lambda d: float(d["confidence"]), reverse=True)
+            
+            for det in dets:
+                best_tr = None
+                best_cost = float("inf")
+                
+                det_xy = (float(det["x"]), float(det["y"]))
+                det_box = xywh_to_xyxy(det_xy[0], det_xy[1], float(det["width"]), float(det["height"]))
+                max_d = self._max_dist(cls)
+                
+                for tr in cand_tracks:
+                    if tr.track_id in used_track_ids:
+                        continue
+                    
+                    d = dist(tr.last_xy, det_xy)
+                    if d > max_d:
+                        continue
+                    
+                    if self.use_iou_gate and tr.last_box_xyxy is not None:
+                        if iou_xyxy(tr.last_box_xyxy, det_box) < self.min_iou:
+                            continue
+                    
+                    if d < best_cost:
+                        best_cost = d
+                        best_tr = tr
+                        
+                if best_tr is None:
+                    self._new_track(det, t)
+                else:
+                    self._update_track(best_tr, det, t)
+                    used_track_ids.add(best_tr.track_id)
+                    
+        to_delete = [tid for tid, tr in self.tracks.items() if tr.missed > self.max_age]
+        for tid in to_delete:
+            del self.tracks[tid]
+
+        return list(self.tracks.values())
+    
+__all__ = ["SimpleTracker", "Track"]

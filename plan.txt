@@ -68,3 +68,31 @@ i'd say we can assume the object is the same one as the previous frame if it's p
 calculate movement of objects - we know saws are constant, rgs move on a line, bullets as well
 player is more complicated - will need to computer velocity from change in position and accel from change in avg velocity
     use these to assume if player is walking, jumping, sliding, falling
+
+1/22/26:
+    now have persistent object tracks and velo / accel
+    project all this data into a 1d sample space - should the player jump yes or no
+
+1/23/26:
+    current pipelines:
+    - for visualization purposes, we have model_img.py -> simply runs the model over images
+        in -> capture (png)
+        run -> model_img.py
+        out -> annotated capture (png)
+    - model_mp4 also helps with visualization. however, since it runs inference over video, it
+    utilizes the tracker class to predict tracks and velocity as well.
+        in -> video capture (mp4)
+        run -> model_mp4.py, tracker.py
+        out -> annotated video capture (mp4)
+    - record_mp4.py. this file is supposed to capture the video, and in doing so,
+    we collect data that relates to our training. it collects jump inputs on time stamps and frames,
+    and puts them into two csvs.
+        in -> null
+        run -> record_mp4.py
+        out -> captured video (mp4), inputs (csv), frames (csv)
+    - make_labels_csv.py helps combine inputs and frames into a single csv file with closest labeled frames for jumps
+        in -> frames (csv), inputs (csv)
+        run -> make_labels.csv
+        out -> labels (csv)
+
+next up: need to work on capturing per frame state for game information and combining the information with labels to form a full dataset.
