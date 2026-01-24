@@ -5,8 +5,20 @@ import os
 import cv2
 import numpy as np
 from tracker import SimpleTracker
+import csv
+from typing import Optional
+from math import hypot
 
-# Model config
+# CSV config
+INPUTS_CSV = "inputs_test.csv"
+STATE_CSV = "states_test.csv"
+LABELS_CSV = "labels.csv"
+TRAIN_CSV = "train.csv"
+
+TRAP_CLASSES = {"saw", "bullet", "rg"}
+K_TRAPS = 2
+
+# CV Model config
 load_dotenv()
 MODEL_ID = "simple-kot/5"
 CONF_THRES = 0.5
@@ -32,6 +44,117 @@ CLIENT = InferenceHTTPClient(
     api_url=API_URL,
     api_key=API_KEY
 )
+
+def load_keydowns(csv_path: str, key_name: str = "space") -> list[float]:
+    times = []
+    with open(csv_path, "r", newline="") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            if row.get("key") == key_name and row.get("event") == "keydown":
+                times.append(float(row["t"]))
+    times.sort()
+    return times
+
+def interval_has_keydown(keydowns: list[float], start_t: float, end_t: float, idx_ptr: int) -> tuple[int, int]:
+    # keep pointer constant throughout execution in order to skip directly to the frame start time
+    # if keydown is within the interval label = 1
+    label = 0
+    n = len(keydowns)
+    
+    while idx_ptr < n and keydowns[idx_ptr] <= start_t:
+        idx_ptr += 1
+        
+    if idx_ptr < n and keydowns[idx_ptr] <= end_t:
+        label = 1
+        
+    return label, idx_ptr
+        
+def pick_best_track(tracks, cls: str):
+    cands = [tr for tr in tracks if tr.cls == cls and tr.last_xy is not None]
+    
+    if not cands:
+        return None
+    cands.sort(key=lambda tr: (tr.missed, -tr.age))
+    return cands[0]
+
+def dist_xy(a, b) -> float:
+    return hypot(a[0] - b[0], a[1] - b[1])
+
+def pick_k_nearest_tracks(tracks, player_xy: Optional[tuple[float, float]], k: int = 2):
+    trap_tracks = [tr for tr in tracks if tr.cls in TRAP_CLASSES and tr.last_xy is not None]
+    if not trap_tracks:
+        return None
+    
+    # Return most recent traps if player isn't found on this frame
+    if player_xy is None:
+        trap_tracks.sort(key=lambda tr: (tr.missed, -tr.age))
+        return trap_tracks[:k]
+    
+    trap_tracks.sort(key=lambda tr: (dist_xy(tr.last_xy, player_xy), tr.missed, -tr.age))
+    
+    return trap_tracks[:k]
+
+def build_state_row(frame_idx: int, t: float, prev_t: Optional[float], tracks) -> dict:
+    dt = 0.0 if prev_t is None else float(t - prev_t)
+    
+    player = pick_best_track(tracks, "player")
+    goal = pick_best_track(tracks, "goal")
+    
+    player_present = 1 if player is not None else 0
+    goal_present = 1 if goal is not None else 0
+    
+    if player_present:
+        px, py = player.last_xy
+        pvx, pvy = player.last_v if player.last_v is not None else (0.0, 0.0)
+        player_xy = (px, py)
+    else:
+        px = 0.0
+        py = 0.0
+        pvx = 0.0
+        pvy = 0.0
+        player_xy = None
+        
+    if goal_present:
+        gx, gy = goal.last_xy
+    else:
+        gx = 0.0
+        gy = 0.0
+        
+    goal_dx = gx - px if (player_present and goal_present) else 0.0
+    goal_dy = gy - py if (player_present and goal_present) else 0.0
+    
+    traps = pick_k_nearest_tracks(tracks, player_xy, K_TRAPS)
+    
+    row = {
+        "frame_idx": frame_idx,
+        "t": float(t),
+        "dt": float(dt),
+        
+        "player_x": float(px),
+        "player_y": float(py),
+        "player_vx": float(pvx),
+        "player_vy": float(pvy),
+        "player_present": int(player_present),
+        
+        "goal_x": float(gx),
+        "goal_y": float(gy),
+        "goal_dx": float(goal_dx),
+        "goal_dy": float(goal_dy),
+        "goal_present": int(goal_present),
+    }
+    
+    for i in range(K_TRAPS):
+        key = i + 1
+        if i < len(traps):
+            tr = traps[i]
+            tx, ty = tr.last_xy
+            tvx, tvy = tr.last_v if tr.last_v is not None else (0.0, 0.0)
+            
+            # assign row with tx, ty, tvx, tvy
+            # distance to player (x, y)
+            # trap present
+            # 0.0 if none
+    
 
 """ Draw Roboflow predictions on image and return it """
 def draw_boxes(img: Image.Image, result: dict | list[dict]) -> Image.Image:
@@ -94,8 +217,6 @@ def draw_arrow(draw, start, vec, scale=1.0, color="blue", width=3):
 def infer_frame(frame_path: str) -> dict | list[dict]:
     return CLIENT.infer(frame_path, model_id=MODEL_ID)
 
-def calculate_motion(result: dict | list[dict]):
-    pass
 
 """ Run predictions on the video and save an annotated copy """
 def process_video(in_path: str, out_path: str):
@@ -144,7 +265,8 @@ def process_video(in_path: str, out_path: str):
             frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
             img = Image.fromarray(frame_rgb)
 
-            img = draw_boxes(img, result)
+            # Draw boxes for per-frame labeling, tracks is more recent
+            # img = draw_boxes(img, result)
             img = draw_tracks(img, last_tracks)
 
             out_rgb = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
