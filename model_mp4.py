@@ -56,8 +56,6 @@ def load_keydowns(csv_path: str, key_name: str = "space") -> list[float]:
     return times
 
 def interval_has_keydown(keydowns: list[float], start_t: float, end_t: float, idx_ptr: int) -> tuple[int, int]:
-    # keep pointer constant throughout execution in order to skip directly to the frame start time
-    # if keydown is within the interval label = 1
     label = 0
     n = len(keydowns)
     
@@ -74,6 +72,8 @@ def pick_best_track(tracks, cls: str):
     
     if not cands:
         return None
+    
+    # Pick freshest (least missed) track
     cands.sort(key=lambda tr: (tr.missed, -tr.age))
     return cands[0]
 
@@ -85,11 +85,12 @@ def pick_k_nearest_tracks(tracks, player_xy: Optional[tuple[float, float]], k: i
     if not trap_tracks:
         return None
     
-    # Return most recent traps if player isn't found on this frame
+    # Return most recent traps if no player detection
     if player_xy is None:
         trap_tracks.sort(key=lambda tr: (tr.missed, -tr.age))
         return trap_tracks[:k]
     
+    # Choose K closest traps to player
     trap_tracks.sort(key=lambda tr: (dist_xy(tr.last_xy, player_xy), tr.missed, -tr.age))
     
     return trap_tracks[:k]
@@ -150,11 +151,25 @@ def build_state_row(frame_idx: int, t: float, prev_t: Optional[float], tracks) -
             tx, ty = tr.last_xy
             tvx, tvy = tr.last_v if tr.last_v is not None else (0.0, 0.0)
             
-            # assign row with tx, ty, tvx, tvy
-            # distance to player (x, y)
-            # trap present
-            # 0.0 if none
+            row[f"trap{key}_x"] = float(tx)
+            row[f"trap{key}_y"] = float(ty)
+            row[f"trap{key}_vx"] = float(tvx)
+            row[f"trap{key}_vy"] = float(tvy)
+            
+            row[f"trap{key}_dx"] = float(tx - px) if player_present else 0.0
+            row[f"trap{key}_dy"] = float(ty - py) if player_present else 0.0
+            row[f"trap{key}_present"] = 1
+        else:
+            row[f"trap{key}_x"] = 0.0
+            row[f"trap{key}_y"] = 0.0
+            row[f"trap{key}_vx"] = 0.0
+            row[f"trap{key}_vy"] = 0.0
+            
+            row[f"trap{key}_dx"] = 0.0
+            row[f"trap{key}_dy"] = 0.0
+            row[f"trap{key}_present"] = 0
     
+    return row
 
 """ Draw Roboflow predictions on image and return it """
 def draw_boxes(img: Image.Image, result: dict | list[dict]) -> Image.Image:
@@ -231,9 +246,8 @@ def process_video(in_path: str, out_path: str):
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
     writer = cv2.VideoWriter(out_path, fourcc, fps, (width, height))
 
-    frame_idx = 0
-    last_result = None
-    last_tracks = []
+    keydowns = load_keydowns(INPUTS_CSV, "space")
+    kd_ptr = 0
     
     tracker = SimpleTracker(
         max_age=10,
@@ -241,6 +255,39 @@ def process_video(in_path: str, out_path: str):
         use_iou_gate=True,
         min_iou=0.1
     )
+    
+    state_fieldnames = [
+        "frame_idx","t","dt",
+        "player_x","player_y","player_vx","player_vy","player_present",
+        "goal_x","goal_y","goal_dx","goal_dy","goal_present",
+        "trap1_x","trap1_y","trap1_vx","trap1_vy","trap1_dx","trap1_dy","trap1_present",
+        "trap2_x","trap2_y","trap2_vx","trap2_vy","trap2_dx","trap2_dy","trap2_present",
+    ]
+    labels_fieldnames = ["frame_idx", "t", "jump_next"]
+    train_fieldnames = state_fieldnames + ["jump_next"]
+    
+    state_f = open(STATE_CSV, "w", newline="")
+    labels_f = open(LABELS_CSV, "w", newline="")
+    train_f = open(TRAIN_CSV, "w", newline="")
+
+    state_writer = csv.DictWriter(state_f, fieldnames=state_fieldnames)
+    labels_writer = csv.DictWriter(labels_f, fieldnames=labels_fieldnames)
+    train_writer = csv.DictWriter(train_f, fieldnames=train_fieldnames)
+
+    state_writer.writeheader()
+    labels_writer.writeheader()
+    train_writer.writeheader()
+    
+    pending_state = None
+    pending_t = None
+    pending_frame_idx = None
+    pending_prev_t = None
+    
+    prev_infer_t = None
+    
+    frame_idx = 0
+    last_result = None
+    last_tracks = []
     
     print("Beginning inference")
     while True:
@@ -253,10 +300,12 @@ def process_video(in_path: str, out_path: str):
             temp_frame_path = "temp_frame.png"
             cv2.imwrite(temp_frame_path, frame_bgr)
             result = infer_frame(temp_frame_path)
-            
             last_result = result
+            
             t = frame_idx / fps
             last_tracks = tracker.update(result, t)
+
+            state_row = build_state_row(frame_idx=frame_idx, t=t, prev_t=prev_infer_t, tracks=last_tracks)
 
         else:
             result = last_result
