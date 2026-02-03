@@ -1,0 +1,15 @@
+{
+  "level_id": "test",
+  "run_id": "run_20260202_181203",
+  "created_at": "2026-02-02T18:12:03",
+  "fps_target": 30,
+  "seconds_target": 5,
+  "window_owner_target": "King of Thieves",
+  "region": {
+    "left": 25,
+    "top": 113,
+    "width": 919,
+    "height": 670
+  },
+  "notes": ""
+}

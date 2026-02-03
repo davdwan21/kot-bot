@@ -32,7 +32,7 @@ class Track:
     last_t: float
     last_v: tuple[float, float] = (0.0, 0.0)
     last_a: tuple[float, float] = (0.0, 0.0)
-    age: int = 0       # Frames since creation
+    age: int = 0       # Successful frame matches
     missed: int = 0    # Frames not matched
     history: list[tuple[float, float, float]] = field(default_factory=list)  # (t, x, y)
     last_box_xyxy: Optional[tuple[float, float, float, float]] = None
@@ -86,7 +86,7 @@ class SimpleTracker:
     def _update_track(self, tr: Track, det: dict, t: float):
         x, y = float(det["x"]), float(det["y"])
         dt = t - tr.last_t
-        print("DEBUG", tr.track_id, "dt=", dt, "last_t=", tr.last_t, "t=", t)
+        # print("DEBUG", tr.track_id, "dt=", dt, "last_t=", tr.last_t, "t=", t)
         
         if dt > 1e-6:
             vx = (x - tr.last_xy[0]) / dt
@@ -112,7 +112,7 @@ class SimpleTracker:
         w, h = float(det["width"]), float(det["height"])
         tr.last_box_xyxy = xywh_to_xyxy(x, y, w, h)
         
-    """ Call once per day """
+    """ Call once per frame """
     def update(self, result: dict, t: float) -> list[Track]:
         t = float(t)
         

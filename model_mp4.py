@@ -8,12 +8,15 @@ from tracker import SimpleTracker
 import csv
 from typing import Optional
 from math import hypot
+import json
+from pathlib import Path
 
 # CSV config
 INPUTS_CSV = "inputs_test.csv"
 STATE_CSV = "states_test.csv"
-LABELS_CSV = "labels.csv"
-TRAIN_CSV = "train.csv"
+LABELS_CSV = "labels_test.csv"
+TRAIN_CSV = "train_test.csv"
+FRAMES_CSV = "frames_test.csv"
 
 TRAP_CLASSES = {"saw", "bullet", "rg"}
 K_TRAPS = 2
@@ -44,6 +47,89 @@ CLIENT = InferenceHTTPClient(
     api_url=API_URL,
     api_key=API_KEY
 )
+DATA_ROOT = "data"
+
+# Returns all raw run directories: data/raw/<level>/<run>/
+def list_raw_runs(data_root: str = DATA_ROOT):
+    raw_root = Path(data_root) / "raw"
+    if not raw_root.exists():
+        raise FileNotFoundError(f"Missing raw root: {raw_root}")
+
+    runs = []
+    for level_dir in sorted(raw_root.iterdir()):
+        if not level_dir.is_dir():
+            continue
+        for run_dir in sorted(level_dir.iterdir()):
+            if run_dir.is_dir():
+                # require expected input files
+                if (run_dir / "capture.mp4").exists() and (run_dir / "frames.csv").exists() and (run_dir / "inputs.csv").exists():
+                    runs.append(run_dir)
+    return runs
+
+def pick_run_interactive(data_root: str = DATA_ROOT) -> Path:
+    runs = list_raw_runs(data_root)
+    if not runs:
+        raise RuntimeError(f"No runs found under {Path(data_root)/'raw'}")
+
+    print("\nAvailable raw runs:\n")
+    for i, p in enumerate(runs):
+        # p is path = data/raw/<level>/<run>
+        level_id = p.parent.name
+        run_id = p.name
+        print(f"[{i}] {level_id}/{run_id}")
+
+    while True:
+        s = input("\nPick a run index: ").strip()
+        try:
+            idx = int(s)
+            if 0 <= idx < len(runs):
+                return runs[idx]
+        except ValueError:
+            pass
+        print("Invalid index, try again.")
+
+# Given raw run dir: data/raw/<level>/<run>/
+# Create processed dir: data/processed/<level>/<run>/
+def resolve_paths_from_run_dir(run_dir: Path, data_root: str = DATA_ROOT) -> dict:
+    level_id = run_dir.parent.name
+    run_id = run_dir.name
+
+    capture = run_dir / "capture.mp4"
+    frames = run_dir / "frames.csv"
+    inputs = run_dir / "inputs.csv"
+    meta = run_dir / "meta.json"
+
+    for p in [capture, frames, inputs]:
+        if not p.exists():
+            raise FileNotFoundError(f"Missing required file: {p}")
+
+    out_dir = Path(data_root) / "processed" / level_id / run_id
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    return {
+        "level_id": level_id,
+        "run_id": run_id,
+        "run_dir": str(run_dir),
+        "capture": str(capture),
+        "frames": str(frames),
+        "inputs": str(inputs),
+        "meta": str(meta) if meta.exists() else None,
+        "out_dir": str(out_dir),
+        "state": str(out_dir / "state.csv"),
+        "labels": str(out_dir / "labels.csv"),
+        "train": str(out_dir / "train.csv"),
+        "annotated": str(out_dir / "annotated.mp4"),
+    }
+
+
+def load_frame_times(frames_csv_path: str) -> dict[int, float]:
+    t_by_frame = {}
+    with open(frames_csv_path, "r", newline="") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            t_by_frame[int(row["frame_idx"])] = float(row["t"])
+    return t_by_frame
+
 
 def load_keydowns(csv_path: str, key_name: str = "space") -> list[float]:
     times = []
@@ -58,13 +144,17 @@ def load_keydowns(csv_path: str, key_name: str = "space") -> list[float]:
 def interval_has_keydown(keydowns: list[float], start_t: float, end_t: float, idx_ptr: int) -> tuple[int, int]:
     label = 0
     n = len(keydowns)
-    
+
     while idx_ptr < n and keydowns[idx_ptr] <= start_t:
         idx_ptr += 1
-        
+
+    label = 0
     if idx_ptr < n and keydowns[idx_ptr] <= end_t:
         label = 1
-        
+        # handle all keydowns up to end_t (safeguard)
+        while idx_ptr < n and keydowns[idx_ptr] <= end_t:
+            idx_ptr += 1
+
     return label, idx_ptr
         
 def pick_best_track(tracks, cls: str):
@@ -83,7 +173,7 @@ def dist_xy(a, b) -> float:
 def pick_k_nearest_tracks(tracks, player_xy: Optional[tuple[float, float]], k: int = 2):
     trap_tracks = [tr for tr in tracks if tr.cls in TRAP_CLASSES and tr.last_xy is not None]
     if not trap_tracks:
-        return None
+        return []
     
     # Return most recent traps if no player detection
     if player_xy is None:
@@ -234,11 +324,13 @@ def infer_frame(frame_path: str) -> dict | list[dict]:
 
 
 """ Run predictions on the video and save an annotated copy """
-def process_video(in_path: str, out_path: str):
+def process_video(in_path: str, out_path: str, frames_csv: str, inputs_csv: str,
+                  state_csv: str, labels_csv: str, train_csv: str):
     cap = cv2.VideoCapture(in_path)
     if not cap.isOpened():
         raise RuntimeError(f"could not open video: {in_path}")
     
+    t_by_frame = load_frame_times(frames_csv)
     fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
@@ -246,7 +338,7 @@ def process_video(in_path: str, out_path: str):
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
     writer = cv2.VideoWriter(out_path, fourcc, fps, (width, height))
 
-    keydowns = load_keydowns(INPUTS_CSV, "space")
+    keydowns = load_keydowns(inputs_csv, "space")
     kd_ptr = 0
     
     tracker = SimpleTracker(
@@ -266,9 +358,9 @@ def process_video(in_path: str, out_path: str):
     labels_fieldnames = ["frame_idx", "t", "jump_next"]
     train_fieldnames = state_fieldnames + ["jump_next"]
     
-    state_f = open(STATE_CSV, "w", newline="")
-    labels_f = open(LABELS_CSV, "w", newline="")
-    train_f = open(TRAIN_CSV, "w", newline="")
+    state_f = open(state_csv, "w", newline="")
+    labels_f = open(labels_csv, "w", newline="")
+    train_f = open(train_csv, "w", newline="")
 
     state_writer = csv.DictWriter(state_f, fieldnames=state_fieldnames)
     labels_writer = csv.DictWriter(labels_f, fieldnames=labels_fieldnames)
@@ -281,7 +373,6 @@ def process_video(in_path: str, out_path: str):
     pending_state = None
     pending_t = None
     pending_frame_idx = None
-    pending_prev_t = None
     
     prev_infer_t = None
     
@@ -290,44 +381,86 @@ def process_video(in_path: str, out_path: str):
     last_tracks = []
     
     print("Beginning inference")
-    while True:
-        print(f"Reading frame {frame_idx}")
-        ok, frame_bgr = cap.read()
-        if not ok:
-            break
+    try:
+        while True:
+            print(f"Reading frame {frame_idx}")
+            ok, frame_bgr = cap.read()
+            if not ok:
+                break
 
-        if frame_idx % STRIDE == 0:
-            temp_frame_path = "temp_frame.png"
-            cv2.imwrite(temp_frame_path, frame_bgr)
-            result = infer_frame(temp_frame_path)
-            last_result = result
-            
-            t = frame_idx / fps
-            last_tracks = tracker.update(result, t)
+            if frame_idx % STRIDE == 0:
+                temp_frame_path = "temp_frame.png"
+                cv2.imwrite(temp_frame_path, frame_bgr)
+                result = infer_frame(temp_frame_path)
+                last_result = result
+                
+                # Updated t get due to potential frame <--> time mismatching
+                t = t_by_frame.get(frame_idx)
+                if t is None:
+                    # Fallback, ideally never used
+                    t = frame_idx / (fps or 30.0)
 
-            state_row = build_state_row(frame_idx=frame_idx, t=t, prev_t=prev_infer_t, tracks=last_tracks)
+                last_tracks = tracker.update(result, t)
 
-        else:
-            result = last_result
+                # Last state row is dropped (no next frame to predict)
+                state_row = build_state_row(frame_idx=frame_idx, t=t, prev_t=prev_infer_t, tracks=last_tracks)
+                
+                if pending_state is not None and pending_t is not None:
+                    jump_label, kd_ptr = interval_has_keydown(keydowns, pending_t, t, kd_ptr)
+                    
+                    state_writer.writerow(pending_state)
+                    labels_writer.writerow({"frame_idx": pending_frame_idx, "t": pending_t, "jump_next": jump_label})
+                    
+                    train_row = dict(pending_state)
+                    train_row["jump_next"] = jump_label
+                    train_writer.writerow(train_row)
+                    
+                pending_state = state_row
+                pending_t = t
+                pending_frame_idx = frame_idx
+                prev_infer_t = t
+            else:
+                result = last_result
 
-        if result is not None:
-            frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
-            img = Image.fromarray(frame_rgb)
+            if result is not None:
+                frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+                img = Image.fromarray(frame_rgb)
 
-            # Draw boxes for per-frame labeling, tracks is more recent
-            # img = draw_boxes(img, result)
-            img = draw_tracks(img, last_tracks)
+                # Draw boxes for per-frame labeling, tracks is more recent
+                # img = draw_boxes(img, result)
+                img = draw_tracks(img, last_tracks)
 
-            out_rgb = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
-            writer.write(out_rgb)
-        else:
-            writer.write(frame_bgr)
+                out_rgb = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
+                writer.write(out_rgb)
+            else:
+                writer.write(frame_bgr)
 
-        frame_idx += 1
-
-    cap.release()
-    writer.release()
-    print(f"Saved: {out_path}")
+            frame_idx += 1
+    finally:
+        cap.release()
+        writer.release()
+        state_f.close()
+        labels_f.close()
+        train_f.close()
         
+    print(f"Saved: {out_path}")
+    print(f"Wrote to {state_csv}, {labels_csv}, and {train_csv}")
+    
+
 if __name__ == "__main__":
-    process_video(IN_VID, OUT_VID)
+    run_dir = pick_run_interactive(DATA_ROOT)
+    paths = resolve_paths_from_run_dir(run_dir, DATA_ROOT)
+
+    print("\nSelected run:")
+    print(f"  raw:  {paths['run_dir']}")
+    print(f"  out:  {paths['out_dir']}\n")
+
+    process_video(
+        in_path=paths["capture"],
+        out_path=paths["annotated"],
+        frames_csv=paths["frames"],
+        inputs_csv=paths["inputs"],
+        state_csv=paths["state"],
+        labels_csv=paths["labels"],
+        train_csv=paths["train"],
+    )
