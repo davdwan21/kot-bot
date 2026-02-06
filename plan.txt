@@ -96,3 +96,10 @@ player is more complicated - will need to computer velocity from change in posit
         out -> labels (csv)
 
 next up: need to work on capturing per frame state for game information and combining the information with labels to form a full dataset.
+
+2/5/26:
+currently, record_mp4.py collects raw data - capture, frame inputs, time to frame data,
+model_mp4.py runs the roboflow vision over capture.mp4 and then produces train.csv which contains:
+frame_idx,t,dt,player_x,player_y,player_vx,player_vy,player_present,goal_x,goal_y,goal_dx,goal_dy,goal_present,trap1_x,trap1_y,trap1_vx,trap1_vy,trap1_dx,trap1_dy,trap1_present,trap2_x,trap2_y,trap2_vx,trap2_vy,trap2_dx,trap2_dy,trap2_present,jump_next
+
+i'm going to try training a model off this info alone, and i'll collect data from:

@@ -3,3 +3,5 @@
 .env
 /vids
 temp_frame.png
+/data
+/__pycache__

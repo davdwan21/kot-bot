@@ -300,14 +300,16 @@ def draw_tracks(img: Image.Image, tracks, v_scale=0.3, a_scale=0.02) -> Image.Im
         cx, cy = tr.last_xy
         
         if tr.last_v is not None:
-            print(f"id: {tr.track_id} has velo {tr.last_v}")
+            # print(f"id: {tr.track_id} has velo {tr.last_v}")
             draw_arrow(draw, (cx, cy), tr.last_v, scale=v_scale, color="blue", width=3)
             
         if tr.last_a is not None:
-            print(f"id: {tr.track_id} has accel {tr.last_v}")
+            # print(f"id: {tr.track_id} has accel {tr.last_v}")
+            
+            # Don't draw accel arrow (too noisy)
             # draw_arrow(draw, (cx, cy), tr.last_a, scale=a_scale, color="red", width=3)
             
-        print(f"id {tr.track_id} is class {tr.cls}")
+        # print(f"id {tr.track_id} is class {tr.cls}")
 
     return img
 
