@@ -123,8 +123,11 @@ pylibsrtp==1.0.0
 pylogix==1.0.5
 pymodbus==3.8.3
 PyMsgBox==2.0.1
+pynput==1.8.1
 pyobjc-core==12.1
+pyobjc-framework-ApplicationServices==12.1
 pyobjc-framework-Cocoa==12.1
+pyobjc-framework-CoreText==12.1
 pyobjc-framework-Quartz==12.1
 pyOpenSSL==25.3.0
 pyparsing==3.3.1

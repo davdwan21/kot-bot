@@ -8,7 +8,6 @@ from tracker import SimpleTracker
 import csv
 from typing import Optional
 from math import hypot
-import json
 from pathlib import Path
 
 # CSV config
